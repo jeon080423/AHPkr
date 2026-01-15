@@ -24,6 +24,8 @@ from dateutil.relativedelta import relativedelta
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ANOVA 및 사후검정을 위한 라이브러리 (없을 경우 예외처리)
 try:
@@ -170,6 +172,16 @@ PW: {user_pw}
         return False
 
 # --- DB CRUD ---
+
+def log_to_sheets(user_id, role, signup_date):
+    try:
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
+        client = gspread.authorize(creds)
+        sheet = client.open('AHPkr_Users').sheet1
+        sheet.append_row([user_id, role, str(signup_date)])
+    except:
+        pass
 def add_user(user_id, pw, role):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -179,6 +191,7 @@ def add_user(user_id, pw, role):
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
                   (user_id, pw, role, str(signup_date), str(expiry_date)))
         conn.commit()
+        log_to_sheets(user_id, role, signup_date)
         success = True
     except sqlite3.IntegrityError:
         success = False
@@ -1259,3 +1272,4 @@ if uploaded_file:
 
 st.markdown("---")
 st.caption("© 2026 AHP Analysis System. All rights reserved.")
+
