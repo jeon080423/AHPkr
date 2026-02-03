@@ -175,12 +175,16 @@ PW: {user_pw}
 
 def log_to_sheets(user_id, role, signup_date):
     try:
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        # gcp_service_account 시크릿 정보 로드
+        creds_info = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
+        # 구글 시트 파일 이름 'AHPkr_Users'
         sheet = client.open('AHPkr_Users').sheet1
-        sheet.append_row([user_id, role, str(signup_date)])
-    except:
+        sheet.append_row([str(user_id), str(role), str(signup_date)])
+    except Exception as e:
+        # 실패 시 로그 남김 (사용자에게는 영향을 주지 않음)
         pass
 
 def add_user(user_id, pw, role):
@@ -192,6 +196,7 @@ def add_user(user_id, pw, role):
         c.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", 
                   (user_id, pw, role, str(signup_date), str(expiry_date)))
         conn.commit()
+        # 시트 동기화 로직 호출
         log_to_sheets(user_id, role, signup_date)
         success = True
     except sqlite3.IntegrityError:
@@ -1217,27 +1222,25 @@ if uploaded_file:
                     st.markdown("#### 📊 시각화 센터")
                     col_chart1, col_chart2 = st.columns(2)
                     
-                    # [데이터 구조 안정화] radar_indiv_df 생성을 위한 통합 데이터프레임 구축
-                    radar_rows = []
-                    # 모든 하위 항목 데이터를 하나의 리스트로 통합
+                    # [오류 해결] 시각화용 데이터 구축 시 Matrix_Object 객체 제외
+                    radar_data_list = []
                     for m_f, info in sub_results_storage.items():
-                        s_df = info['df'].copy()
-                        # 메인 가중치 병합
+                        s_df_clean = info['df'].drop(columns=['Matrix_Object'], errors='ignore')
                         m_weights = main_results_df[['ID', f'Weight_{m_f}']]
-                        merged_s = s_df.merge(m_weights, on='ID', how='inner')
+                        merged = s_df_clean.merge(m_weights, on='ID', how='inner')
                         
-                        for _, row in merged_s.iterrows():
+                        for _, row in merged.iterrows():
                             u_type = str(row['Type'])
                             m_w = row[f'Weight_{m_f}']
                             for s_f in info['factors']:
                                 s_w = row[f'Weight_{s_f}']
-                                radar_rows.append({
+                                radar_data_list.append({
                                     "Type": u_type,
                                     "Factor": s_f,
                                     "Global_Weight": float(m_w * s_w)
                                 })
                     
-                    radar_indiv_df = pd.DataFrame(radar_rows)
+                    radar_indiv_df = pd.DataFrame(radar_data_list)
 
                     with col_chart1:
                         st.write("**종합 중요도 (Bar)**")
@@ -1247,9 +1250,10 @@ if uploaded_file:
                     with col_chart2:
                         st.write("**그룹별 중요도 패턴 (Radar)**")
                         if not radar_indiv_df.empty:
-                            # NaN 제거 및 수치형 강제 변환
+                            # 수치형 강제 변환 및 그룹화
                             radar_indiv_df['Global_Weight'] = pd.to_numeric(radar_indiv_df['Global_Weight'], errors='coerce')
-                            radar_plot_df = radar_indiv_df.dropna(subset=['Global_Weight']).groupby(['Type', 'Factor'], as_index=False)['Global_Weight'].mean()
+                            # 객체 필터링을 위해 수치형 컬럼만 선택하여 평균 산출
+                            radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'], as_index=False)['Global_Weight'].mean()
 
                             fig_radar = go.Figure()
                             for t in radar_plot_df['Type'].unique():
@@ -1260,23 +1264,20 @@ if uploaded_file:
                                     fill='toself',
                                     name=t
                                 ))
-                            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True)))
+                            fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, radar_plot_df['Global_Weight'].max()*1.1])))
                             st.plotly_chart(fig_radar, use_container_width=True)
-                        else:
-                            st.info("시각화할 데이터가 부족합니다.")
 
                     st.markdown("---")
                     st.write("**3. 일관성 비율(CR) 분포도 (Violin/Box Plot)**")
-                    dist_rows = []
+                    dist_data = []
                     for _, row in main_results_df.iterrows():
-                        dist_rows.append({"Level": "대분류", "Final_CR": row['Final_CR']})
+                        dist_data.append({"Level": "대분류", "Final_CR": row['Final_CR']})
                     for m_f, info in sub_results_storage.items():
                         for _, row in info['df'].iterrows():
-                            dist_rows.append({"Level": f"중분류({m_f})", "Final_CR": row['Final_CR']})
+                            dist_data.append({"Level": f"중분류({m_f})", "Final_CR": row['Final_CR']})
                     
-                    if dist_rows:
-                        dist_df = pd.DataFrame(dist_rows)
-                        fig_cr_dist = px.violin(dist_df, y="Final_CR", x="Level", color="Level", box=True, points="all")
+                    if dist_data:
+                        fig_cr_dist = px.violin(pd.DataFrame(dist_data), y="Final_CR", x="Level", color="Level", box=True, points="all")
                         st.plotly_chart(fig_cr_dist, use_container_width=True)
 
                     st.markdown("---")
@@ -1296,7 +1297,7 @@ if uploaded_file:
         else:
             st.warning(message)
     except Exception as e:
-        st.error(f"분석 엔진 오류: {e}")
+        st.error(f"분석 오류 발생: {e}")
 
 st.markdown("---")
 st.caption("© 2026 AHP Analysis System. All rights reserved.")
