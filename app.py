@@ -178,7 +178,7 @@ def log_to_sheets(user_id, role, signup_date):
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         client = gspread.authorize(creds)
-        sheet = client.open_by_key(st.secrets["SPREADSHEET_ID"]).sheet1
+        sheet = client.open('AHPkr_Users').sheet1
         sheet.append_row([user_id, role, str(signup_date)])
     except:
         pass
@@ -1272,6 +1272,4 @@ if uploaded_file:
 
 st.markdown("---")
 st.caption("© 2026 AHP Analysis System. All rights reserved.")
-
-
 
