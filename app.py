@@ -450,7 +450,7 @@ def send_application_email(user_email):
 
 def send_conversion_request_email(user_email):
     sender_email = "jeon080423@gmail.com"
-    password = st.secrets["EMAIL_PASSWORD"]
+    password = "csuh xxru wqdy mttt"
     recipient_email = "jeon080423@gmail.com"
     subject = f"[AHP 마스터] 정식사용자 전환 요청: {user_email}"
     body = f"임시 사용자가 정식사용자로 전환 요청 했습니다\nID: {user_email}"
@@ -1912,417 +1912,416 @@ else:
     uploaded_file = st.file_uploader("작성된 엑셀 파일 업로드 (.xlsx)", type=['xlsx', 'xls'])
 
     if uploaded_file:
-        if st.button("분석 시작", type="primary"):
-            try:
-                excel_obj = pd.ExcelFile(uploaded_file)
-                sheet_names = excel_obj.sheet_names
-                df_main = pd.read_excel(uploaded_file, sheet_name=sheet_names[0])
-                main_cols_names = df_main.columns[2:]
-                main_factors, n_main = infer_factors_from_columns(main_cols_names)
+        try:
+            excel_obj = pd.ExcelFile(uploaded_file)
+            sheet_names = excel_obj.sheet_names
+            df_main = pd.read_excel(uploaded_file, sheet_name=sheet_names[0])
+            main_cols_names = df_main.columns[2:]
+            main_factors, n_main = infer_factors_from_columns(main_cols_names)
 
-                permission_granted = False
-                message = ""
-                role = st.session_state.user_role
-                user_id = st.session_state.user_id
+            permission_granted = False
+            message = ""
+            role = st.session_state.user_role
+            user_id = st.session_state.user_id
 
-                if role == 'admin' or role == 'official':
-                    permission_granted = True
-                    if role == 'official':
-                        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date()
-                        expiry = datetime.datetime.strptime(st.session_state.expiry_date, "%Y-%m-%d").date()
-                        if today > expiry:
-                            permission_granted = False
-                            message = "⛔ 이용 기간이 만료되었습니다."
-                else: 
-                    rows_ok = True
-                    for sn in sheet_names:
-                        if len(pd.read_excel(uploaded_file, sheet_name=sn)) > 5:
-                            rows_ok = False
-                            break
-                    if rows_ok: permission_granted = True
-                    else: message = f"⛔ **무료사용자**는 시트당 최대 5개 표본까지만 분석 가능합니다."
+            if role == 'admin' or role == 'official':
+                permission_granted = True
+                if role == 'official':
+                    today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date()
+                    expiry = datetime.datetime.strptime(st.session_state.expiry_date, "%Y-%m-%d").date()
+                    if today > expiry:
+                        permission_granted = False
+                        message = "⛔ 이용 기간이 만료되었습니다."
+            else: 
+                rows_ok = True
+                for sn in sheet_names:
+                    if len(pd.read_excel(uploaded_file, sheet_name=sn)) > 5:
+                        rows_ok = False
+                        break
+                if rows_ok: permission_granted = True
+                else: message = f"⛔ **무료사용자**는 시트당 최대 5개 표본까지만 분석 가능합니다."
 
-                if permission_granted:
-                    with st.spinner("계층 분석 수행 중..."):
-                        main_results_df, main_factors, main_excluded, main_excluded_df = process_single_sheet(df_main, cr_threshold, max_iter, mean_method)
-                        
-                        total_excluded = main_excluded
-                        st.markdown(f"**분석 제외: {total_excluded}건**")
+            if permission_granted:
+                with st.spinner("계층 분석 수행 중..."):
+                    main_results_df, main_factors, main_excluded, main_excluded_df = process_single_sheet(df_main, cr_threshold, max_iter, mean_method)
+                    
+                    total_excluded = main_excluded
+                    st.markdown(f"**분석 제외: {total_excluded}건**")
 
-                        main_sig_df = calculate_pairwise_ttest(main_results_df, main_factors)
-                        main_weight_cols = [f"Weight_{f}" for f in main_factors]
-                        
-                        if mean_method == 'arithmetic':
-                            group_main_weights = main_results_df[main_weight_cols].mean(axis=0)
-                        else:
-                            group_main_weights = gmean(main_results_df[main_weight_cols].values, axis=0)
-                        group_main_weights = group_main_weights / group_main_weights.sum()
-                        main_cr_final_avg = main_results_df['Final_CR'].mean()
-                        
-                        main_matrices = np.stack(main_results_df['Matrix_Object'].values)
-                        main_group_matrix = np.mean(main_matrices, axis=0) if mean_method == 'arithmetic' else gmean(main_matrices, axis=0)
-                        main_grp_cr, main_grp_ci, _ = calculate_consistency(main_group_matrix, mean_method)
-                        
-                        indiv_global_data = []
-                        all_ids = main_results_df['ID'].unique()
-                        
-                        sub_results_storage = {} 
-                        total_excl_df_list = [main_excluded_df]
-                        for i, sub_sheet_name in enumerate(sheet_names[1:]):
-                            parent_factor = main_factors[i]
-                            df_sub = pd.read_excel(uploaded_file, sheet_name=sub_sheet_name)
-                            sub_res_df, sub_facts, sub_excl, sub_excl_df = process_single_sheet(df_sub, cr_threshold, max_iter, mean_method)
-                            sub_sig_df = calculate_pairwise_ttest(sub_res_df, sub_facts)
-                            sub_w_cols = [f"Weight_{f}" for f in sub_facts]
-                            group_sub_w = sub_res_df[sub_w_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(sub_res_df[sub_w_cols].values, axis=0)
-                            group_sub_w = group_sub_w / group_sub_w.sum()
-                            sub_cr_final_avg = sub_res_df['Final_CR'].mean()
-                            sub_matrices = np.stack(sub_res_df['Matrix_Object'].values)
-                            sub_group_matrix = np.mean(sub_matrices, axis=0) if mean_method == 'arithmetic' else gmean(sub_matrices, axis=0)
-                            sub_grp_cr, _, _ = calculate_consistency(sub_group_matrix, method=mean_method)
-                            sub_results_storage[parent_factor] = {
-                                'weights': group_sub_w, 'factors': sub_facts, 'cr': sub_cr_final_avg,
-                                'df': sub_res_df, 'group_matrix': sub_group_matrix, 'group_cr': sub_grp_cr, 'sig_df': sub_sig_df
-                            }
-                            if not sub_excl_df.empty:
-                                sub_excl_df['Sheet'] = sub_sheet_name
-                                total_excl_df_list.append(sub_excl_df)
+                    main_sig_df = calculate_pairwise_ttest(main_results_df, main_factors)
+                    main_weight_cols = [f"Weight_{f}" for f in main_factors]
+                    
+                    if mean_method == 'arithmetic':
+                        group_main_weights = main_results_df[main_weight_cols].mean(axis=0)
+                    else:
+                        group_main_weights = gmean(main_results_df[main_weight_cols].values, axis=0)
+                    group_main_weights = group_main_weights / group_main_weights.sum()
+                    main_cr_final_avg = main_results_df['Final_CR'].mean()
+                    
+                    main_matrices = np.stack(main_results_df['Matrix_Object'].values)
+                    main_group_matrix = np.mean(main_matrices, axis=0) if mean_method == 'arithmetic' else gmean(main_matrices, axis=0)
+                    main_grp_cr, main_grp_ci, _ = calculate_consistency(main_group_matrix, mean_method)
+                    
+                    indiv_global_data = []
+                    all_ids = main_results_df['ID'].unique()
+                    
+                    sub_results_storage = {} 
+                    total_excl_df_list = [main_excluded_df]
+                    for i, sub_sheet_name in enumerate(sheet_names[1:]):
+                        parent_factor = main_factors[i]
+                        df_sub = pd.read_excel(uploaded_file, sheet_name=sub_sheet_name)
+                        sub_res_df, sub_facts, sub_excl, sub_excl_df = process_single_sheet(df_sub, cr_threshold, max_iter, mean_method)
+                        sub_sig_df = calculate_pairwise_ttest(sub_res_df, sub_facts)
+                        sub_w_cols = [f"Weight_{f}" for f in sub_facts]
+                        group_sub_w = sub_res_df[sub_w_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(sub_res_df[sub_w_cols].values, axis=0)
+                        group_sub_w = group_sub_w / group_sub_w.sum()
+                        sub_cr_final_avg = sub_res_df['Final_CR'].mean()
+                        sub_matrices = np.stack(sub_res_df['Matrix_Object'].values)
+                        sub_group_matrix = np.mean(sub_matrices, axis=0) if mean_method == 'arithmetic' else gmean(sub_matrices, axis=0)
+                        sub_grp_cr, _, _ = calculate_consistency(sub_group_matrix, method=mean_method)
+                        sub_results_storage[parent_factor] = {
+                            'weights': group_sub_w, 'factors': sub_facts, 'cr': sub_cr_final_avg,
+                            'df': sub_res_df, 'group_matrix': sub_group_matrix, 'group_cr': sub_grp_cr, 'sig_df': sub_sig_df
+                        }
+                        if not sub_excl_df.empty:
+                            sub_excl_df['Sheet'] = sub_sheet_name
+                            total_excl_df_list.append(sub_excl_df)
 
-                        for uid in all_ids:
-                            u_main = main_results_df[main_results_df['ID'] == uid]
-                            if u_main.empty: continue
-                            u_type = u_main['Type'].values[0]
-                            for mf in main_factors:
-                                m_w = u_main[f"Weight_{mf}"].values[0]
-                                s_row_df = sub_results_storage[mf]['df']
-                                u_sub = s_row_df[s_row_df['ID'] == uid]
-                                if u_sub.empty: continue
-                                for sf in sub_results_storage[mf]['factors']:
-                                    s_w = u_sub[f"Weight_{sf}"].values[0]
-                                    indiv_global_data.append({
-                                        "ID": uid, "Type": str(u_type), "Factor": sf, "Global_Weight": m_w * s_w
-                                    })
-                        indiv_df = pd.DataFrame(indiv_global_data)
-                        
-                        anova_df = pd.DataFrame()
-                        if not indiv_df.empty and len(indiv_df['Type'].unique()) >= 2:
-                            anova_df = calculate_anova_and_posthoc(indiv_df)
-
-                        summary_rows = []
-                        for idx, main_f in enumerate(main_factors):
-                            m_weight = group_main_weights[idx]
-                            sub_info = sub_results_storage[main_f]
-                            for s_idx, sub_f in enumerate(sub_info['factors']):
-                                s_weight = sub_info['weights'][s_idx]
-                                global_w = m_weight * s_weight
-                                summary_rows.append({
-                                    "대분류": main_f, "대분류 가중치": m_weight, "중분류": sub_f, "중분류 가중치": s_weight,
-                                    "Global Weight": global_w, "CR(대분류)": main_cr_final_avg, "CR(중분류)": sub_info['cr']
+                    for uid in all_ids:
+                        u_main = main_results_df[main_results_df['ID'] == uid]
+                        if u_main.empty: continue
+                        u_type = u_main['Type'].values[0]
+                        for mf in main_factors:
+                            m_w = u_main[f"Weight_{mf}"].values[0]
+                            s_row_df = sub_results_storage[mf]['df']
+                            u_sub = s_row_df[s_row_df['ID'] == uid]
+                            if u_sub.empty: continue
+                            for sf in sub_results_storage[mf]['factors']:
+                                s_w = u_sub[f"Weight_{sf}"].values[0]
+                                indiv_global_data.append({
+                                    "ID": uid, "Type": str(u_type), "Factor": sf, "Global_Weight": m_w * s_w
                                 })
-                        
-                        final_df = pd.DataFrame(summary_rows)
-                        final_df['Global Rank'] = final_df['Global Weight'].rank(ascending=False, method='min').astype(int)
-                        cols_order = ["대분류", "대분류 가중치", "중분류", "중분류 가중치", "Global Weight", "Global Rank", "CR(대분류)", "CR(중분류)"]
-                        final_df = final_df[cols_order]
+                    indiv_df = pd.DataFrame(indiv_global_data)
+                    
+                    anova_df = pd.DataFrame()
+                    if not indiv_df.empty and len(indiv_df['Type'].unique()) >= 2:
+                        anova_df = calculate_anova_and_posthoc(indiv_df)
 
-                        unique_groups = sorted(main_results_df['Type'].astype(str).unique())
-                        group_analysis_results = {}
-                        group_full_dfs = {} 
+                    summary_rows = []
+                    for idx, main_f in enumerate(main_factors):
+                        m_weight = group_main_weights[idx]
+                        sub_info = sub_results_storage[main_f]
+                        for s_idx, sub_f in enumerate(sub_info['factors']):
+                            s_weight = sub_info['weights'][s_idx]
+                            global_w = m_weight * s_weight
+                            summary_rows.append({
+                                "대분류": main_f, "대분류 가중치": m_weight, "중분류": sub_f, "중분류 가중치": s_weight,
+                                "Global Weight": global_w, "CR(대분류)": main_cr_final_avg, "CR(중분류)": sub_info['cr']
+                            })
+                    
+                    final_df = pd.DataFrame(summary_rows)
+                    final_df['Global Rank'] = final_df['Global Weight'].rank(ascending=False, method='min').astype(int)
+                    cols_order = ["대분류", "대분류 가중치", "중분류", "중분류 가중치", "Global Weight", "Global Rank", "CR(대분류)", "CR(중분류)"]
+                    final_df = final_df[cols_order]
+
+                    unique_groups = sorted(main_results_df['Type'].astype(str).unique())
+                    group_analysis_results = {}
+                    group_full_dfs = {} 
+                    
+                    for grp in unique_groups:
+                        grp_main_df = main_results_df[main_results_df['Type'].astype(str) == grp]
+                        if grp_main_df.empty: continue
+                        g_main_w = grp_main_df[main_weight_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(grp_main_df[main_weight_cols].values, axis=0)
+                        g_main_w = g_main_w / g_main_w.sum()
+                        g_main_mats = np.stack(grp_main_df['Matrix_Object'].values)
+                        g_main_mat_obj = np.mean(g_main_mats, axis=0) if mean_method == 'arithmetic' else gmean(g_main_mats, axis=0)
+                        g_main_cr, _, _ = calculate_consistency(g_main_mat_obj, method=mean_method)
                         
+                        grp_rows = []
+                        for idx, main_f in enumerate(main_factors):
+                            m_w = g_main_w[idx]
+                            full_sub_df = sub_results_storage[main_f]['df']
+                            grp_sub_df = full_sub_df[full_sub_df['Type'].astype(str) == grp]
+                            sub_facts_list = sub_results_storage[main_f]['factors']
+                            if grp_sub_df.empty: continue
+                            s_w_cols = [f"Weight_{f}" for f in sub_facts_list]
+                            g_sub_w = grp_sub_df[s_w_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(grp_sub_df[s_w_cols].values, axis=0)
+                            g_sub_w = g_sub_w / g_sub_w.sum()
+                            g_sub_mats = np.stack(grp_sub_df['Matrix_Object'].values)
+                            g_sub_mat_obj = np.mean(g_sub_mats, axis=0) if mean_method == 'arithmetic' else gmean(g_sub_mats, axis=0)
+                            g_sub_cr, _, _ = calculate_consistency(g_sub_mat_obj, method=mean_method)
+                            for s_idx, sf in enumerate(sub_facts_list):
+                                grp_rows.append({
+                                    "대분류": main_f, "대분류 가중치": m_w, "중분류": sf, "중분류 가중치": g_sub_w[s_idx],
+                                    "Global Weight": m_w * g_sub_w[s_idx], "CR(대분류)": g_main_cr, "CR(중분류)": g_sub_cr
+                                })
+                        g_df = pd.DataFrame(grp_rows)
+                        if not g_df.empty:
+                            g_df['Global Rank'] = g_df['Global Weight'].rank(ascending=False, method='min').astype(int)
+                            group_full_dfs[grp] = g_df[cols_order]
+                            group_analysis_results[grp] = group_full_dfs[grp][['중분류', 'Global Weight']]
+
+                    comparison_df = final_df[['중분류', 'Global Weight']].copy()
+                    comparison_df.rename(columns={'Global Weight': 'Overall'}, inplace=True)
+                    for grp, df_res in group_analysis_results.items():
+                        temp_df = df_res.rename(columns={'Global Weight': grp})
+                        comparison_df = comparison_df.merge(temp_df, on='중분류', how='left')
+
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        workbook = writer.book
+                        formats = {
+                            'header': workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#000000', 'font_color': '#FFFFFF', 'border': 1}),
+                            'merge': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1}),
+                            'body': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1}),
+                            'num': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0.000'}),
+                            'sum_row': workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'align': 'center', 'valign': 'vcenter', 'border': 1}),
+                            'sum_val': workbook.add_format({'num_format': '0', 'bg_color': '#D3D3D3', 'border': 1, 'align':'center'}),
+                            'num_sum': workbook.add_format({'num_format': '0.000', 'bg_color': '#D3D3D3', 'border': 1, 'align':'center'}),
+                            'yellow': workbook.add_format({'bg_color': 'yellow', 'border': 1, 'align': 'center', 'num_format': '0.000'})
+                        }
+                        border_fmt = workbook.add_format({'border': 1})
+                        fmt_float_no_border = workbook.add_format({'num_format': '0.000', 'align': 'center', 'valign': 'vcenter', 'border': 1})
+                        fmt_diagonal = workbook.add_format({'num_format': '0', 'align': 'center', 'valign': 'vcenter', 'bg_color': '#E7E6E6', 'border': 1})
+
+                        total_excluded_df = pd.concat(total_excl_df_list, ignore_index=True)
+                        current_row = write_custom_ahp_table(writer, '종합분석', final_df, "1) 전체_종합결과", 1, formats, excluded_df=total_excluded_df)
                         for grp in unique_groups:
-                            grp_main_df = main_results_df[main_results_df['Type'].astype(str) == grp]
-                            if grp_main_df.empty: continue
-                            g_main_w = grp_main_df[main_weight_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(grp_main_df[main_weight_cols].values, axis=0)
-                            g_main_w = g_main_w / g_main_w.sum()
-                            g_main_mats = np.stack(grp_main_df['Matrix_Object'].values)
-                            g_main_mat_obj = np.mean(g_main_mats, axis=0) if mean_method == 'arithmetic' else gmean(g_main_mats, axis=0)
-                            g_main_cr, _, _ = calculate_consistency(g_main_mat_obj, method=mean_method)
+                            if grp in group_full_dfs:
+                                current_row = write_custom_ahp_table(writer, '종합분석', group_full_dfs[grp], f"▶ [그룹: {grp}] 분석 결과", current_row, formats)
+
+                        if len(unique_groups) >= 1:
+                            ws_comp = workbook.add_worksheet('Group_Comparison')
+                            writer.sheets['Group_Comparison'] = ws_comp
+                            s_row = 1
+                            ws_comp.write_string(s_row, 0, "그룹 간 비교(일원배치 분산분석: ANOVA)", workbook.add_format({'bold': True, 'font_size': 12}))
+                            s_row += 1
                             
-                            grp_rows = []
-                            for idx, main_f in enumerate(main_factors):
-                                m_w = g_main_w[idx]
-                                full_sub_df = sub_results_storage[main_f]['df']
-                                grp_sub_df = full_sub_df[full_sub_df['Type'].astype(str) == grp]
-                                sub_facts_list = sub_results_storage[main_f]['factors']
-                                if grp_sub_df.empty: continue
-                                s_w_cols = [f"Weight_{f}" for f in sub_facts_list]
-                                g_sub_w = grp_sub_df[s_w_cols].mean(axis=0) if mean_method == 'arithmetic' else gmean(grp_sub_df[s_w_cols].values, axis=0)
-                                g_sub_w = g_sub_w / g_sub_w.sum()
-                                g_sub_mats = np.stack(grp_sub_df['Matrix_Object'].values)
-                                g_sub_mat_obj = np.mean(g_sub_mats, axis=0) if mean_method == 'arithmetic' else gmean(g_sub_mats, axis=0)
-                                g_sub_cr, _, _ = calculate_consistency(g_sub_mat_obj, method=mean_method)
-                                for s_idx, sf in enumerate(sub_facts_list):
-                                    grp_rows.append({
-                                        "대분류": main_f, "대분류 가중치": m_w, "중분류": sf, "중분류 가중치": g_sub_w[s_idx],
-                                        "Global Weight": m_w * g_sub_w[s_idx], "CR(대분류)": g_main_cr, "CR(중분류)": g_sub_cr
-                                    })
-                            g_df = pd.DataFrame(grp_rows)
-                            if not g_df.empty:
-                                g_df['Global Rank'] = g_df['Global Weight'].rank(ascending=False, method='min').astype(int)
-                                group_full_dfs[grp] = g_df[cols_order]
-                                group_analysis_results[grp] = group_full_dfs[grp][['중분류', 'Global Weight']]
+                            if not anova_df.empty:
+                                anova_for_merge = anova_df.rename(columns={'요인': '중분류'})
+                                integrated_df = comparison_df.merge(anova_for_merge, on='중분류', how='left')
+                            else:
+                                integrated_df = comparison_df
+                            
+                            integrated_df.to_excel(writer, sheet_name='Group_Comparison', startrow=s_row, index=False)
+                            add_borders_to_data(ws_comp, s_row, 0, integrated_df, border_fmt)
+                            
+                            num_format_3 = workbook.add_format({'num_format': '0.000', 'border': 1, 'align': 'center'})
+                            for r in range(len(integrated_df)):
+                                for c in range(1, len(integrated_df.columns)):
+                                    val = integrated_df.iloc[r, c]
+                                    if pd.notnull(val) and isinstance(val, (int, float)):
+                                        ws_comp.write_number(s_row + 1 + r, c, val, num_format_3)
+                                    elif pd.notnull(val):
+                                        ws_comp.write(s_row + 1 + r, c, val, border_fmt)
 
-                        comparison_df = final_df[['중분류', 'Global Weight']].copy()
-                        comparison_df.rename(columns={'Global Weight': 'Overall'}, inplace=True)
-                        for grp, df_res in group_analysis_results.items():
-                            temp_df = df_res.rename(columns={'Global Weight': grp})
-                            comparison_df = comparison_df.merge(temp_df, on='중분류', how='left')
+                            guide_start_row = s_row + len(integrated_df) + 3
+                            bold_fmt = workbook.add_format({'bold': True, 'font_size': 11, 'valign': 'vcenter', 'align': 'left', 'bg_color': '#F2F2F2', 'border': 1})
+                            text_fmt = workbook.add_format({'font_size': 10, 'text_wrap': True, 'valign': 'top', 'align': 'left', 'border': 1})
+                            ws_comp.set_column('A:G', 20) 
+                            ws_comp.merge_range(guide_start_row, 0, guide_start_row, 6, "※ 그룹 간 중요도의 차이가 있지만 통계적으로 유의하지 않게 나타나는 이유", bold_fmt)
 
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            workbook = writer.book
-                            formats = {
-                                'header': workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'bg_color': '#000000', 'font_color': '#FFFFFF', 'border': 1}),
-                                'merge': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1}),
-                                'body': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1}),
-                                'num': workbook.add_format({'align': 'center', 'valign': 'vcenter', 'border': 1, 'num_format': '0.000'}),
-                                'sum_row': workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'align': 'center', 'valign': 'vcenter', 'border': 1}),
-                                'sum_val': workbook.add_format({'num_format': '0', 'bg_color': '#D3D3D3', 'border': 1, 'align':'center'}),
-                                'num_sum': workbook.add_format({'num_format': '0.000', 'bg_color': '#D3D3D3', 'border': 1, 'align':'center'}),
-                                'yellow': workbook.add_format({'bg_color': 'yellow', 'border': 1, 'align': 'center', 'num_format': '0.000'})
-                            }
-                            border_fmt = workbook.add_format({'border': 1})
-                            fmt_float_no_border = workbook.add_format({'num_format': '0.000', 'align': 'center', 'valign': 'vcenter', 'border': 1})
-                            fmt_diagonal = workbook.add_format({'num_format': '0', 'align': 'center', 'valign': 'vcenter', 'bg_color': '#E7E6E6', 'border': 1})
-
-                            total_excluded_df = pd.concat(total_excl_df_list, ignore_index=True)
-                            current_row = write_custom_ahp_table(writer, '종합분석', final_df, "1) 전체_종합결과", 1, formats, excluded_df=total_excluded_df)
-                            for grp in unique_groups:
-                                if grp in group_full_dfs:
-                                    current_row = write_custom_ahp_table(writer, '종합분석', group_full_dfs[grp], f"▶ [그룹: {grp}] 분석 결과", current_row, formats)
-
-                            if len(unique_groups) >= 1:
-                                ws_comp = workbook.add_worksheet('Group_Comparison')
-                                writer.sheets['Group_Comparison'] = ws_comp
-                                s_row = 1
-                                ws_comp.write_string(s_row, 0, "그룹 간 비교(일원배치 분산분석: ANOVA)", workbook.add_format({'bold': True, 'font_size': 12}))
-                                s_row += 1
-                                
-                                if not anova_df.empty:
-                                    anova_for_merge = anova_df.rename(columns={'요인': '중분류'})
-                                    integrated_df = comparison_df.merge(anova_for_merge, on='중분류', how='left')
-                                else:
-                                    integrated_df = comparison_df
-                                
-                                integrated_df.to_excel(writer, sheet_name='Group_Comparison', startrow=s_row, index=False)
-                                add_borders_to_data(ws_comp, s_row, 0, integrated_df, border_fmt)
-                                
-                                num_format_3 = workbook.add_format({'num_format': '0.000', 'border': 1, 'align': 'center'})
-                                for r in range(len(integrated_df)):
-                                    for c in range(1, len(integrated_df.columns)):
-                                        val = integrated_df.iloc[r, c]
-                                        if pd.notnull(val) and isinstance(val, (int, float)):
-                                            ws_comp.write_number(s_row + 1 + r, c, val, num_format_3)
-                                        elif pd.notnull(val):
-                                            ws_comp.write(s_row + 1 + r, c, val, border_fmt)
-
-                                guide_start_row = s_row + len(integrated_df) + 3
-                                bold_fmt = workbook.add_format({'bold': True, 'font_size': 11, 'valign': 'vcenter', 'align': 'left', 'bg_color': '#F2F2F2', 'border': 1})
-                                text_fmt = workbook.add_format({'font_size': 10, 'text_wrap': True, 'valign': 'top', 'align': 'left', 'border': 1})
-                                ws_comp.set_column('A:G', 20) 
-                                ws_comp.merge_range(guide_start_row, 0, guide_start_row, 6, "※ 그룹 간 중요도의 차이가 있지만 통계적으로 유의하지 않게 나타나는 이유", bold_fmt)
-
-                                guide_content = [
-                                    ("1. 그룹 내 편차(분산)가 너무 큰 경우", "ANOVA는 '그룹 간의 차이'와 '그룹 내의 차이'를 비교합니다.\n\n■ 원리: 그룹 간 평균 차이가 크더라도, 각 그룹 내부 데이터들이 서로 들쭉날쭉(분산이 큼)하다면 통계적으로는 '이 차이가 우연히 발생했을 가능성이 높다'고 판단합니다.\n■ 분석: 현재 데이터에서 평균값의 절대적인 차이는 커 보일 수 있지만, 각 그룹(A~D)에 속한 개별 응답자들의 값들이 평균에서 멀리 떨어져 있다면 F-값이 낮아지고 P-Value는 올라가게 됩니다."),
-                                    ("2. 표본 크기(Sample Size)의 부족", "통계적 유의성은 표본의 수에 매우 민감합니다.\n\n■ 현상: 각 그룹의 데이터 개수(표본수)가 너무 적다면(예: 그룹당 3~5개 미만) 아무리 평균 차이가 커도 통계적 힘(Power)이 부족하여 유의미한 차이를 찾아내지 못합니다.\n■ 확인 사항: 현재 분석에 사용된 각 그룹의 n수(표본수)가 충분한지 검토가 필요합니다."),
-                                    ("3. 데이터의 단위(Scale)와 변동성", "표에 나타난 수치들이 대부분 0.1 미만 혹은 0.2 수준의 매우 작은 소수점 단위입니다.\n\n■ 분석: 수치 자체가 작기 때문에 시각적으로는 0.05와 0.15가 3배 차이로 커 보일 수 있지만, 실제 계산 과정에서 발생하는 표준오차(Standard Error) 범위 안에 해당 수치들이 포함되어 있다면 통계적으로는 '측정 오차 범위 내의 흔들림'으로 간주됩니다.")
-                                ]
-
-                                current_row_comp = guide_start_row + 1
-                                for title, body in guide_content:
-                                    ws_comp.set_row(current_row_comp, 25)
-                                    ws_comp.merge_range(current_row_comp, 0, current_row_comp, 6, title, bold_fmt)
-                                    ws_comp.set_row(current_row_comp + 1, 120)
-                                    ws_comp.merge_range(current_row_comp + 1, 0, current_row_comp + 1, 6, body, text_fmt)
-                                    current_row_comp += 2
-
-                            def write_detailed_sheet(sheet_name, matrix_data, detail_data_df, matrix_title, row_labels, group_matrices=None, sheet_excl_count=0):
-                                ws = workbook.add_worksheet(sheet_name)
-                                writer.sheets[sheet_name] = ws
-                                s_row_det = 0
-                                
-                                ws.write(s_row_det, 0, f"분석 제외 사례수: {sheet_excl_count}건", workbook.add_format({'bold': True, 'font_color': 'red'}))
-                                s_row_det += 1
-                                
-                                ws.write_string(s_row_det, 0, matrix_title)
-                                s_row_det += 1
-                                m_df_obj = pd.DataFrame(matrix_data, index=row_labels, columns=row_labels)
-                                m_df_obj.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det)
-                                add_borders_to_data(ws, s_row_det, 0, m_df_obj, border_fmt, has_header=True, has_index=True)
-                                for r in range(len(matrix_data)):
-                                    for c in range(len(matrix_data)):
-                                        val = 1 if r==c else matrix_data[r][c]
-                                        ws.write(s_row_det+r+1, c+1, val, border_fmt if r!=c else fmt_diagonal)
-                                        if r!=c: ws.write(s_row_det+r+1, c+1, val, fmt_float_no_border)
-                                
-                                s_row_det += len(matrix_data) + 3
-                                
-                                if group_matrices:
-                                    for g_name, g_mat in group_matrices.items():
-                                        ws.write_string(s_row_det, 0, f"] 그룹 종합 행렬: {g_name}")
-                                        s_row_det += 1
-                                        gm_df_obj = pd.DataFrame(g_mat, index=row_labels, columns=row_labels)
-                                        gm_df_obj.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det)
-                                        add_borders_to_data(ws, s_row_det, 0, gm_df_obj, border_fmt, has_header=True, has_index=True)
-                                        for r in range(len(g_mat)):
-                                            for c in range(len(g_mat)):
-                                                val = 1 if r==c else g_mat[r][c]
-                                                ws.write(s_row_det+r+1, c+1, val, border_fmt if r!=c else fmt_diagonal)
-                                                if r!=c: ws.write(s_row_det+r+1, c+1, val, fmt_float_no_border)
-                                        s_row_det += len(g_mat) + 3
-                                
-                                detail_data_df.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det, index=False)
-                                
-                                for c_idx, col_val in enumerate(detail_data_df.columns):
-                                    ws.write(s_row_det, c_idx, col_val, formats['header'])
-                                
-                                for r_idx in range(len(detail_data_df)):
-                                    orig_cr_val = detail_data_df.iloc[r_idx]['Original_CR']
-                                    final_cr_val = detail_data_df.iloc[r_idx]['Final_CR']
-                                    row_pos = s_row_det + 1 + r_idx
-                                    
-                                    for c_idx, col_name in enumerate(detail_data_df.columns):
-                                        val = detail_data_df.iloc[r_idx, c_idx]
-                                        current_fmt = border_fmt
-                                        
-                                        if col_name == 'Original_CR' and orig_cr_val > 0.1:
-                                            current_fmt = formats['yellow']
-                                        elif col_name == 'Final_CR' and final_cr_val > 0.1:
-                                            current_fmt = formats['yellow']
-                                        elif isinstance(val, (float, np.float64)):
-                                            current_fmt = formats['num']
-                                        else:
-                                            current_fmt = formats['body']
-                                            
-                                        if pd.isnull(val):
-                                            ws.write_blank(row_pos, c_idx, "", current_fmt)
-                                        else:
-                                            ws.write(row_pos, c_idx, val, current_fmt)
-
-                            main_group_mats = {}
-                            for grp in unique_groups:
-                                g_df_m = main_results_df[main_results_df['Type'].astype(str) == grp]
-                                if not g_df_m.empty:
-                                    mats_stack = np.stack(g_df_m['Matrix_Object'].values)
-                                    main_group_mats[grp] = np.mean(mats_stack, axis=0) if mean_method == 'arithmetic' else gmean(mats_stack, axis=0)
-
-                            out_main = main_results_df.drop(columns=['Matrix_Object'], errors='ignore')
-                            write_detailed_sheet('Result_Main', main_group_matrix, out_main, f"[1] 전체 종합 행렬", main_factors, group_matrices=main_group_mats, sheet_excl_count=main_excluded)
-                            for mf, info in sub_results_storage.items():
-                                safe_name = f"Result_{mf}"[:31]
-                                sub_grp_mats = {}
-                                for grp in unique_groups:
-                                    g_sub_df = info['df'][info['df']['Type'].astype(str) == grp]
-                                    if not g_sub_df.empty:
-                                        mats_stack = np.stack(g_sub_df['Matrix_Object'].values)
-                                        sub_grp_mats[grp] = np.mean(mats_stack, axis=0) if mean_method == 'arithmetic' else gmean(mats_stack, axis=0)
-                                out_sub = info['df'].drop(columns=['Matrix_Object'], errors='ignore')
-                                
-                                sub_excl_val = 0
-                                for df_ex in total_excl_df_list:
-                                    if 'Sheet' in df_ex.columns and not df_ex.empty:
-                                         if df_ex['Sheet'].iloc[0] == mf or (mf in df_ex['Sheet'].unique()):
-                                              sub_excl_val = len(df_ex[df_ex['Sheet'] == mf])
-                                              
-                                write_detailed_sheet(safe_name, info['group_matrix'], out_sub, f"[1] 전체 종합 행렬", info['factors'], group_matrices=sub_grp_mats, sheet_excl_count=sub_excl_val)
-
-                            theory_ws = workbook.add_worksheet("Consistency_Theory")
-                            theory_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'font_name': 'NanumGothic'})
-                            theory_body_fmt = workbook.add_format({'text_wrap': True, 'valign': 'top', 'font_name': 'NanumGothic'})
-                            theory_text = [
-                                ["의사결정론적 관점에서의 AHP 일관성 보정 원리 및 학술적 근거"],
-                                [""],
-                                ["1. 서론: 계층분석과정(AHP)의 일관성 문제"],
-                                ["Saaty(1980)에 의해 제안된 계층분석과정(Analytic Hierarchy Process, AHP)은 인간의 주관적 판단을 정량화하는 강력한 다기준 의사결정 도구이다. 그러나 의사결정자의 인지적 한계로 인해 쌍대비교 행렬에서 이행성(Transitivity)이 결여된 비일관적 판단이 발생할 수 있다. 본 시스템은 이러한 비일관성을 수학적으로 교정하여 분석의 신뢰성을 확보한다."],
-                                [""],
-                                ["2. 보정 알고리즘: 반복 수렴 조정법(Iterative Adjustment Method)"],
-                                ["본 시스템에 적용된 보정 로직은 '반복적 선형 결합 수렴법'에 근거한다. 비일관적 행렬 A가 주어졌을 때, 일관성 비율(Consistency Ratio, CR)이 임계값(0.1 또는 0.2)을 초과할 경우 다음과 같은 프로세스를 수행한다."],
-                                ["    가. 고유벡터법(Eigenvector Method) 또는 기하평균법을 통해 현재 행렬의 가중치 벡터 w를 도출한다."],
-                                ["    나. 가중치 벡터 w를 기반으로 완벽한 일관성을 가진 행렬 W = [wi/wj]를 생성한다. 이를 '이상적 일관 행렬'이라 정의한다."],
-                                ["    다. 원본 행렬 A와 이상적 행렬 W를 특정 학습률(Learning Rate, α=0.4)에 따라 선형 결합(Linear Combination)한다: A_new = (1-α)A + αW."],
-                                ["    라. 교정된 행렬 A_new의 역수성(Reciprocity)을 재설정하고, CR이 임계값 이하로 수렴할 때까지 위 과정을 최대 500회 반복한다."],
-                                [""],
-                                ["3. 학술적 근거 및 효과"],
-                                ["첫째, 최소 판단 왜곡의 원리(Principle of Minimal Distortion): Cao et al.(2008)에 따르면, 원본 행렬과 일관 행렬의 가중 평균을 이용한 조정은 의사결정자의 원래 선호 경향성을 최대한 보존하면서 수학적 일관성만을 선택적으로 향상시키는 효과가 입증되었다."],
-                                ["둘째, 수렴 안정성: 반복적 조정 프로세스는 행렬의 최대 고유값(λmax)을 차원 수 n에 수렴하게 함으로써 일관성 지수(CI)를 통계적으로 유의미한 수준으로 감소시킨다."],
-                                ["셋째, 실무적 유용성: 설문 응답자에게 재설문을 요구하기 어려운 연구 환경에서, 본 보정법은 데이터의 대푯값을 훼손하지 않는 범위 내에서 분석의 논리적 타당성을 부여하는 학술적 대안으로 활용된다."],
-                                [""],
-                                ["본 시스템의 분석 결과는 위와 같은 엄밀한 수치적 보정을 거쳐 산출되었으므로, 학술 연구 및 정책 의사결정의 기초 자료로 활용하기에 적합한 신뢰도를 보유함을 확인한다."]
+                            guide_content = [
+                                ("1. 그룹 내 편차(분산)가 너무 큰 경우", "ANOVA는 '그룹 간의 차이'와 '그룹 내의 차이'를 비교합니다.\n\n■ 원리: 그룹 간 평균 차이가 크더라도, 각 그룹 내부 데이터들이 서로 들쭉날쭉(분산이 큼)하다면 통계적으로는 '이 차이가 우연히 발생했을 가능성이 높다'고 판단합니다.\n■ 분석: 현재 데이터에서 평균값의 절대적인 차이는 커 보일 수 있지만, 각 그룹(A~D)에 속한 개별 응답자들의 값들이 평균에서 멀리 떨어져 있다면 F-값이 낮아지고 P-Value는 올라가게 됩니다."),
+                                ("2. 표본 크기(Sample Size)의 부족", "통계적 유의성은 표본의 수에 매우 민감합니다.\n\n■ 현상: 각 그룹의 데이터 개수(표본수)가 너무 적다면(예: 그룹당 3~5개 미만) 아무리 평균 차이가 커도 통계적 힘(Power)이 부족하여 유의미한 차이를 찾아내지 못합니다.\n■ 확인 사항: 현재 분석에 사용된 각 그룹의 n수(표본수)가 충분한지 검토가 필요합니다."),
+                                ("3. 데이터의 단위(Scale)와 변동성", "표에 나타난 수치들이 대부분 0.1 미만 혹은 0.2 수준의 매우 작은 소수점 단위입니다.\n\n■ 분석: 수치 자체가 작기 때문에 시각적으로는 0.05와 0.15가 3배 차이로 커 보일 수 있지만, 실제 계산 과정에서 발생하는 표준오차(Standard Error) 범위 안에 해당 수치들이 포함되어 있다면 통계적으로는 '측정 오차 범위 내의 흔들림'으로 간주됩니다.")
                             ]
-                            theory_ws.set_column('A:A', 100)
-                            for r_idx, row_content in enumerate(theory_text):
-                                fmt = theory_title_fmt if r_idx == 0 else theory_body_fmt
-                                theory_ws.write(r_idx, 0, row_content[0], fmt)
 
-                        st.success("분석이 완료되었습니다.")
-                        if st.session_state.user_role == 'official':
-                            save_analysis_to_db(st.session_state.user_id, f"{uploaded_file.name.split('.')[0]}_Result.xlsx", output.getvalue())
+                            current_row_comp = guide_start_row + 1
+                            for title, body in guide_content:
+                                ws_comp.set_row(current_row_comp, 25)
+                                ws_comp.merge_range(current_row_comp, 0, current_row_comp, 6, title, bold_fmt)
+                                ws_comp.set_row(current_row_comp + 1, 120)
+                                ws_comp.merge_range(current_row_comp + 1, 0, current_row_comp + 1, 6, body, text_fmt)
+                                current_row_comp += 2
 
-                        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🌐 종합 분석 (Global)", "👨‍👩‍👧‍👦 그룹별 분석", "🧪 통계 검정 (ANOVA)", "📊 시각화 센터", "📑 상세 데이터"])
-                        with tab1:
-                            st.subheader("🌐 종합 중요도 및 순위")
-                            st.dataframe(final_df.style.format(precision=3), use_container_width=True)
-                        with tab2:
-                            st.markdown("#### 그룹별 가중치 상세 비교")
-                            st.dataframe(comparison_df.style.format(precision=4), use_container_width=True)
-                        with tab3:
-                            st.markdown("#### 집단 간 유의성 분석")
-                            if not anova_df.empty: st.dataframe(anova_df.style.format(precision=5), use_container_width=True)
-                            else: st.info("통계 검정을 위해 2개 이상의 그룹 데이터가 필요합니다.")
-                        with tab4:
-                            st.markdown("#### 📊 시각화 센터")
-                            col_chart1, col_chart2 = st.columns(2)
-                            with col_chart1:
-                                st.write("**종합 중요도 (Bar)**")
-                                fig_bar = px.bar(final_df.sort_values('Global Weight'), y='중분류', x='Global Weight', orientation='h', text_auto='.3f')
-                                st.plotly_chart(fig_bar, use_container_width=True)
-                            with col_chart2:
-                                st.write("**그룹별 중요도 패턴 (Radar)**")
-                                indiv_global_radar = []
-                                all_ids_r = main_results_df['ID'].unique()
-                                for rid in all_ids_r:
-                                    m_row_r = main_results_df[main_results_df['ID'] == rid].iloc[0]
-                                    rtype_r = m_row_r['Type']
-                                    for m_f in main_factors:
-                                        mw_indiv = m_row_r[f"Weight_{m_f}"]
-                                        s_row_df_r = sub_results_storage[m_f]['df']
-                                        s_row_r = s_row_df_r[s_row_df_r['ID'] == rid].iloc[0]
-                                        for s_f in sub_results_storage[m_f]['factors']:
-                                            indiv_global_radar.append({"Type": rtype_r, "Factor": s_f, "Global_Weight": mw_indiv * s_row_r[f"Weight_{s_f}"]})
-                                radar_indiv_df = pd.DataFrame(indiv_global_radar)
-                                radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'])['Global_Weight'].mean().reset_index()
-                                fig_radar = go.Figure()
-                                for t in radar_plot_df['Type'].unique():
-                                    t_data = radar_plot_df[radar_plot_df['Type'] == t]
-                                    fig_radar.add_trace(go.Scatterpolar(r=t_data['Global_Weight'], theta=t_data['Factor'], fill='toself', name=t))
-                                st.plotly_chart(fig_radar, use_container_width=True)
-                            st.markdown("---")
-                            st.write("**3. 일관성 비율(CR) 분포도 (Violin/Box Plot)**")
-                            cr_dist_data = main_results_df[['ID', 'Type', 'Final_CR']].copy()
-                            cr_dist_data['Level'] = '대분류'
-                            for m_f in main_factors:
-                                temp_cr = sub_results_storage[m_f]['df'][['ID', 'Type', 'Final_CR']].copy()
-                                temp_cr['Level'] = f'중분류({m_f})'
-                                cr_dist_data = pd.concat([cr_dist_data, temp_cr])
-                            fig_cr_dist = px.violin(cr_dist_data, y="Final_CR", x="Level", color="Level", box=True, points="all", title="응답자별 일관성 지수 분포")
-                            st.plotly_chart(fig_cr_dist, use_container_width=True)
-                            st.markdown("---")
-                            st.write("**4. 항목별 우선순위 산점도 (중요도 vs. 합의도)**")
-                            scatter_df = radar_indiv_df.groupby('Factor')['Global_Weight'].agg(['mean', 'std']).reset_index()
-                            scatter_df.columns = ['Factor', 'Weight_Mean', 'Weight_SD']
-                            fig_scatter = px.scatter(scatter_df, x="Weight_Mean", y="Weight_SD", text="Factor", size="Weight_Mean", color="Weight_Mean",
-                                                     labels={'Weight_Mean': '중요도(평균)', 'Weight_SD': '의견차이(표준편차)'},
-                                                     title="중요도-합의도 분석 (우측 하단일수록 중요하고 합의된 항목)")
-                            fig_scatter.update_traces(textposition='top center')
-                            st.plotly_chart(fig_scatter, use_container_width=True)
+                        def write_detailed_sheet(sheet_name, matrix_data, detail_data_df, matrix_title, row_labels, group_matrices=None, sheet_excl_count=0):
+                            ws = workbook.add_worksheet(sheet_name)
+                            writer.sheets[sheet_name] = ws
+                            s_row_det = 0
+                            
+                            ws.write(s_row_det, 0, f"분석 제외 사례수: {sheet_excl_count}건", workbook.add_format({'bold': True, 'font_color': 'red'}))
+                            s_row_det += 1
+                            
+                            ws.write_string(s_row_det, 0, matrix_title)
+                            s_row_det += 1
+                            m_df_obj = pd.DataFrame(matrix_data, index=row_labels, columns=row_labels)
+                            m_df_obj.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det)
+                            add_borders_to_data(ws, s_row_det, 0, m_df_obj, border_fmt, has_header=True, has_index=True)
+                            for r in range(len(matrix_data)):
+                                for c in range(len(matrix_data)):
+                                    val = 1 if r==c else matrix_data[r][c]
+                                    ws.write(s_row_det+r+1, c+1, val, border_fmt if r!=c else fmt_diagonal)
+                                    if r!=c: ws.write(s_row_det+r+1, c+1, val, fmt_float_no_border)
+                            
+                            s_row_det += len(matrix_data) + 3
+                            
+                            if group_matrices:
+                                for g_name, g_mat in group_matrices.items():
+                                    ws.write_string(s_row_det, 0, f"] 그룹 종합 행렬: {g_name}")
+                                    s_row_det += 1
+                                    gm_df_obj = pd.DataFrame(g_mat, index=row_labels, columns=row_labels)
+                                    gm_df_obj.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det)
+                                    add_borders_to_data(ws, s_row_det, 0, gm_df_obj, border_fmt, has_header=True, has_index=True)
+                                    for r in range(len(g_mat)):
+                                        for c in range(len(g_mat)):
+                                            val = 1 if r==c else g_mat[r][c]
+                                            ws.write(s_row_det+r+1, c+1, val, border_fmt if r!=c else fmt_diagonal)
+                                            if r!=c: ws.write(s_row_det+r+1, c+1, val, fmt_float_no_border)
+                                    s_row_det += len(g_mat) + 3
+                            
+                            detail_data_df.to_excel(writer, sheet_name=sheet_name, startrow=s_row_det, index=False)
+                            
+                            for c_idx, col_val in enumerate(detail_data_df.columns):
+                                ws.write(s_row_det, c_idx, col_val, formats['header'])
+                            
+                            for r_idx in range(len(detail_data_df)):
+                                orig_cr_val = detail_data_df.iloc[r_idx]['Original_CR']
+                                final_cr_val = detail_data_df.iloc[r_idx]['Final_CR']
+                                row_pos = s_row_det + 1 + r_idx
+                                
+                                for c_idx, col_name in enumerate(detail_data_df.columns):
+                                    val = detail_data_df.iloc[r_idx, c_idx]
+                                    current_fmt = border_fmt
+                                    
+                                    if col_name == 'Original_CR' and orig_cr_val > 0.1:
+                                        current_fmt = formats['yellow']
+                                    elif col_name == 'Final_CR' and final_cr_val > 0.1:
+                                        current_fmt = formats['yellow']
+                                    elif isinstance(val, (float, np.float64)):
+                                        current_fmt = formats['num']
+                                    else:
+                                        current_fmt = formats['body']
+                                        
+                                    if pd.isnull(val):
+                                        ws.write_blank(row_pos, c_idx, "", current_fmt)
+                                    else:
+                                        ws.write(row_pos, c_idx, val, current_fmt)
 
-                        with tab5:
-                            st.download_button("📥 결과 파일 다운로드 (Excel)", data=output.getvalue(), file_name="AHP_Result.xlsx")
-                            st.dataframe(radar_indiv_df, use_container_width=True)
-                else:
-                    st.warning(message)
-            except Exception as e:
-                st.error(f"오류 발생: {e}")
+                        main_group_mats = {}
+                        for grp in unique_groups:
+                            g_df_m = main_results_df[main_results_df['Type'].astype(str) == grp]
+                            if not g_df_m.empty:
+                                mats_stack = np.stack(g_df_m['Matrix_Object'].values)
+                                main_group_mats[grp] = np.mean(mats_stack, axis=0) if mean_method == 'arithmetic' else gmean(mats_stack, axis=0)
+
+                        out_main = main_results_df.drop(columns=['Matrix_Object'], errors='ignore')
+                        write_detailed_sheet('Result_Main', main_group_matrix, out_main, f"[1] 전체 종합 행렬", main_factors, group_matrices=main_group_mats, sheet_excl_count=main_excluded)
+                        for mf, info in sub_results_storage.items():
+                            safe_name = f"Result_{mf}"[:31]
+                            sub_grp_mats = {}
+                            for grp in unique_groups:
+                                g_sub_df = info['df'][info['df']['Type'].astype(str) == grp]
+                                if not g_sub_df.empty:
+                                    mats_stack = np.stack(g_sub_df['Matrix_Object'].values)
+                                    sub_grp_mats[grp] = np.mean(mats_stack, axis=0) if mean_method == 'arithmetic' else gmean(mats_stack, axis=0)
+                            out_sub = info['df'].drop(columns=['Matrix_Object'], errors='ignore')
+                            
+                            sub_excl_val = 0
+                            for df_ex in total_excl_df_list:
+                                if 'Sheet' in df_ex.columns and not df_ex.empty:
+                                     if df_ex['Sheet'].iloc[0] == mf or (mf in df_ex['Sheet'].unique()):
+                                          sub_excl_val = len(df_ex[df_ex['Sheet'] == mf])
+                                          
+                            write_detailed_sheet(safe_name, info['group_matrix'], out_sub, f"[1] 전체 종합 행렬", info['factors'], group_matrices=sub_grp_mats, sheet_excl_count=sub_excl_val)
+
+                        theory_ws = workbook.add_worksheet("Consistency_Theory")
+                        theory_title_fmt = workbook.add_format({'bold': True, 'font_size': 14, 'font_name': 'NanumGothic'})
+                        theory_body_fmt = workbook.add_format({'text_wrap': True, 'valign': 'top', 'font_name': 'NanumGothic'})
+                        theory_text = [
+                            ["의사결정론적 관점에서의 AHP 일관성 보정 원리 및 학술적 근거"],
+                            [""],
+                            ["1. 서론: 계층분석과정(AHP)의 일관성 문제"],
+                            ["Saaty(1980)에 의해 제안된 계층분석과정(Analytic Hierarchy Process, AHP)은 인간의 주관적 판단을 정량화하는 강력한 다기준 의사결정 도구이다. 그러나 의사결정자의 인지적 한계로 인해 쌍대비교 행렬에서 이행성(Transitivity)이 결여된 비일관적 판단이 발생할 수 있다. 본 시스템은 이러한 비일관성을 수학적으로 교정하여 분석의 신뢰성을 확보한다."],
+                            [""],
+                            ["2. 보정 알고리즘: 반복 수렴 조정법(Iterative Adjustment Method)"],
+                            ["본 시스템에 적용된 보정 로직은 '반복적 선형 결합 수렴법'에 근거한다. 비일관적 행렬 A가 주어졌을 때, 일관성 비율(Consistency Ratio, CR)이 임계값(0.1 또는 0.2)을 초과할 경우 다음과 같은 프로세스를 수행한다."],
+                            ["    가. 고유벡터법(Eigenvector Method) 또는 기하평균법을 통해 현재 행렬의 가중치 벡터 w를 도출한다."],
+                            ["    나. 가중치 벡터 w를 기반으로 완벽한 일관성을 가진 행렬 W = [wi/wj]를 생성한다. 이를 '이상적 일관 행렬'이라 정의한다."],
+                            ["    다. 원본 행렬 A와 이상적 행렬 W를 특정 학습률(Learning Rate, α=0.4)에 따라 선형 결합(Linear Combination)한다: A_new = (1-α)A + αW."],
+                            ["    라. 교정된 행렬 A_new의 역수성(Reciprocity)을 재설정하고, CR이 임계값 이하로 수렴할 때까지 위 과정을 최대 500회 반복한다."],
+                            [""],
+                            ["3. 학술적 근거 및 효과"],
+                            ["첫째, 최소 판단 왜곡의 원리(Principle of Minimal Distortion): Cao et al.(2008)에 따르면, 원본 행렬과 일관 행렬의 가중 평균을 이용한 조정은 의사결정자의 원래 선호 경향성을 최대한 보존하면서 수학적 일관성만을 선택적으로 향상시키는 효과가 입증되었다."],
+                            ["둘째, 수렴 안정성: 반복적 조정 프로세스는 행렬의 최대 고유값(λmax)을 차원 수 n에 수렴하게 함으로써 일관성 지수(CI)를 통계적으로 유의미한 수준으로 감소시킨다."],
+                            ["셋째, 실무적 유용성: 설문 응답자에게 재설문을 요구하기 어려운 연구 환경에서, 본 보정법은 데이터의 대푯값을 훼손하지 않는 범위 내에서 분석의 논리적 타당성을 부여하는 학술적 대안으로 활용된다."],
+                            [""],
+                            ["본 시스템의 분석 결과는 위와 같은 엄밀한 수치적 보정을 거쳐 산출되었으므로, 학술 연구 및 정책 의사결정의 기초 자료로 활용하기에 적합한 신뢰도를 보유함을 확인한다."]
+                        ]
+                        theory_ws.set_column('A:A', 100)
+                        for r_idx, row_content in enumerate(theory_text):
+                            fmt = theory_title_fmt if r_idx == 0 else theory_body_fmt
+                            theory_ws.write(r_idx, 0, row_content[0], fmt)
+
+                    st.success("분석이 완료되었습니다.")
+                    if st.session_state.user_role == 'official':
+                        save_analysis_to_db(st.session_state.user_id, f"{uploaded_file.name.split('.')[0]}_Result.xlsx", output.getvalue())
+
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🌐 종합 분석 (Global)", "👨‍👩‍👧‍👦 그룹별 분석", "🧪 통계 검정 (ANOVA)", "📊 시각화 센터", "📑 상세 데이터"])
+                    with tab1:
+                        st.subheader("🌐 종합 중요도 및 순위")
+                        st.dataframe(final_df.style.format(precision=3), use_container_width=True)
+                    with tab2:
+                        st.markdown("#### 그룹별 가중치 상세 비교")
+                        st.dataframe(comparison_df.style.format(precision=4), use_container_width=True)
+                    with tab3:
+                        st.markdown("#### 집단 간 유의성 분석")
+                        if not anova_df.empty: st.dataframe(anova_df.style.format(precision=5), use_container_width=True)
+                        else: st.info("통계 검정을 위해 2개 이상의 그룹 데이터가 필요합니다.")
+                    with tab4:
+                        st.markdown("#### 📊 시각화 센터")
+                        col_chart1, col_chart2 = st.columns(2)
+                        with col_chart1:
+                            st.write("**종합 중요도 (Bar)**")
+                            fig_bar = px.bar(final_df.sort_values('Global Weight'), y='중분류', x='Global Weight', orientation='h', text_auto='.3f')
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                        with col_chart2:
+                            st.write("**그룹별 중요도 패턴 (Radar)**")
+                            indiv_global_radar = []
+                            all_ids_r = main_results_df['ID'].unique()
+                            for rid in all_ids_r:
+                                m_row_r = main_results_df[main_results_df['ID'] == rid].iloc[0]
+                                rtype_r = m_row_r['Type']
+                                for m_f in main_factors:
+                                    mw_indiv = m_row_r[f"Weight_{m_f}"]
+                                    s_row_df_r = sub_results_storage[m_f]['df']
+                                    s_row_r = s_row_df_r[s_row_df_r['ID'] == rid].iloc[0]
+                                    for s_f in sub_results_storage[m_f]['factors']:
+                                        indiv_global_radar.append({"Type": rtype_r, "Factor": s_f, "Global_Weight": mw_indiv * s_row_r[f"Weight_{s_f}"]})
+                            radar_indiv_df = pd.DataFrame(indiv_global_radar)
+                            radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'])['Global_Weight'].mean().reset_index()
+                            fig_radar = go.Figure()
+                            for t in radar_plot_df['Type'].unique():
+                                t_data = radar_plot_df[radar_plot_df['Type'] == t]
+                                fig_radar.add_trace(go.Scatterpolar(r=t_data['Global_Weight'], theta=t_data['Factor'], fill='toself', name=t))
+                            st.plotly_chart(fig_radar, use_container_width=True)
+                        st.markdown("---")
+                        st.write("**3. 일관성 비율(CR) 분포도 (Violin/Box Plot)**")
+                        cr_dist_data = main_results_df[['ID', 'Type', 'Final_CR']].copy()
+                        cr_dist_data['Level'] = '대분류'
+                        for m_f in main_factors:
+                            temp_cr = sub_results_storage[m_f]['df'][['ID', 'Type', 'Final_CR']].copy()
+                            temp_cr['Level'] = f'중분류({m_f})'
+                            cr_dist_data = pd.concat([cr_dist_data, temp_cr])
+                        fig_cr_dist = px.violin(cr_dist_data, y="Final_CR", x="Level", color="Level", box=True, points="all", title="응답자별 일관성 지수 분포")
+                        st.plotly_chart(fig_cr_dist, use_container_width=True)
+                        st.markdown("---")
+                        st.write("**4. 항목별 우선순위 산점도 (중요도 vs. 합의도)**")
+                        scatter_df = radar_indiv_df.groupby('Factor')['Global_Weight'].agg(['mean', 'std']).reset_index()
+                        scatter_df.columns = ['Factor', 'Weight_Mean', 'Weight_SD']
+                        fig_scatter = px.scatter(scatter_df, x="Weight_Mean", y="Weight_SD", text="Factor", size="Weight_Mean", color="Weight_Mean",
+                                                 labels={'Weight_Mean': '중요도(평균)', 'Weight_SD': '의견차이(표준편차)'},
+                                                 title="중요도-합의도 분석 (우측 하단일수록 중요하고 합의된 항목)")
+                        fig_scatter.update_traces(textposition='top center')
+                        st.plotly_chart(fig_scatter, use_container_width=True)
+
+                    with tab5:
+                        st.download_button("📥 결과 파일 다운로드 (Excel)", data=output.getvalue(), file_name="AHP_Result.xlsx")
+                        st.dataframe(radar_indiv_df, use_container_width=True)
+            else:
+                st.warning(message)
+        except Exception as e:
+            st.error(f"오류 발생: {e}")
 
 st.markdown("---")
 st.caption("© 2026 AHP Master. All rights reserved.")
