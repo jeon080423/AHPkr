@@ -182,6 +182,7 @@ def log_to_sheets(user_id, role, signup_date):
         sheet.append_row([user_id, role, str(signup_date)])
     except:
         pass
+
 def add_user(user_id, pw, role):
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
@@ -604,7 +605,7 @@ with st.sidebar:
             
             # [추가] 로그인 탭 내 서비스 이용 요금 안내
             st.markdown(fee_info_text)
-
+        
         with tab_signup:
             st.header("📝 회원가입")
             s_id = st.text_input("아이디 (이메일 주소)", key="s_id")
@@ -768,7 +769,6 @@ if st.session_state.get('admin_mode', False) and st.session_state.user_role == '
 
 # CASE: Analysis View (Everyone)
 st.subheader("1. AHP 분석 모델 설정 및 입력 템플릿 다운로드")
-
 if st.session_state.user_id is None:
     st.info("🔒 **로그인 후** '나만의 분석 모델'을 만들 수 있습니다. (비로그인 상태에서는 기본 모델 및 샘플 데이터만 제공)")
 else:
@@ -841,7 +841,7 @@ else:
                     - **왼쪽** 항목이 더 중요하면: **음수** 입력 (예: -3)
                     - **오른쪽** 항목이 더 중요하면: **양수** 입력 (예: 3)
                     - **동등**하면: `1` 입력
-                3. **필수 정보 입력**: A열(ID), **B열(Type)에 그룹명 입력 (예: 전문가, 주민 등)**
+                3. **필수 정보 입력**: A열(ID), **B열(Type)에 그룹명 입력 (예: 전문가, 주민 등)
                 """)
                 if os.path.exists("ahp_input_guide.png"):
                     st.image("ahp_input_guide.png", caption="[참고] 설문 응답을 엑셀에 입력하는 방법")
@@ -870,8 +870,7 @@ if st.session_state.user_role == 'official':
 
 with st.container(border=True):
     st.markdown("#### ⚡ 빠른 시작 (도시재생 뉴딜사업 모델)")
-    st.info("아래 버튼을 누르면 테스트용 샘플 엑셀 파일이 다운로드 됩니다.\n\n"
-            "다운받은 테스트 샘플 엑셀 파일을 아래 2. 데이터 업로드 및 분석에 드롭다운 하거나 파일을 찾아 업로드 하세요.")
+    st.info("아래 버튼을 누르면 테스트용 샘플 엑셀 파일이 다운로드 됩니다.\n\n다운받은 테스트 샘플 엑셀 파일을 아래 2. 데이터 업로드 및 분석에 드롭다운 하거나 파일을 찾아 업로드 하세요.")
     
     sample_excel = create_sample_excel()
     st.download_button(
@@ -1162,7 +1161,7 @@ if uploaded_file:
                                 ws.write(s_row+r+1, c+1, val, border_fmt if r!=c else fmt_diagonal)
                                 if r!=c: ws.write(s_row+r+1, c+1, val, fmt_float_no_border)
                         s_row += len(matrix_df) + 3
-
+                        
                         if group_matrices:
                             for g_name, g_mat in group_matrices.items():
                                 ws.write_string(s_row, 0, f"] 그룹 종합 행렬: {g_name}")
@@ -1223,23 +1222,50 @@ if uploaded_file:
                         st.plotly_chart(fig_bar, use_container_width=True)
                     with col_chart2:
                         st.write("**그룹별 중요도 패턴 (Radar)**")
-                        radar_plot_df = indiv_global_data = []
+
+                        indiv_global_data_radar = []
                         all_ids = main_results_df['ID'].unique()
+
                         for rid in all_ids:
-                            m_row = main_results_df[main_results_df['ID'] == rid].iloc[0]
+                            m_df = main_results_df[main_results_df['ID'] == rid]
+                            if m_df.empty:
+                                continue
+                            m_row = m_df.iloc[0]
                             rtype = m_row['Type']
+
                             for m_f in main_factors:
-                                mw_indiv = m_row[f"Weight_{m_f}"]
-                                s_row = sub_results_storage[m_f]['df'][sub_results_storage[m_f]['df']['ID'] == rid].iloc[0]
+                                sub_df_full = sub_results_storage[m_f]['df']
+                                u_sub_df = sub_df_full[sub_df_full['ID'] == rid]
+                                if u_sub_df.empty:
+                                    continue
+                                s_row = u_sub_df.iloc[0]
+
                                 for s_f in sub_results_storage[m_f]['factors']:
-                                    indiv_global_data.append({"Type": rtype, "Factor": s_f, "Global_Weight": mw_indiv * s_row[f"Weight_{s_f}"]})
-                        radar_indiv_df = pd.DataFrame(indiv_global_data)
-                        radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'])['Global_Weight'].mean().reset_index()
-                        fig_radar = go.Figure()
-                        for t in radar_plot_df['Type'].unique():
-                            t_data = radar_plot_df[radar_plot_df['Type'] == t]
-                            fig_radar.add_trace(go.Scatterpolar(r=t_data['Global_Weight'], theta=t_data['Factor'], fill='toself', name=t))
-                        st.plotly_chart(fig_radar, use_container_width=True)
+                                    indiv_global_data_radar.append({
+                                        "Type": rtype,
+                                        "Factor": s_f,
+                                        "Global_Weight": m_row[f"Weight_{m_f}"] * s_row[f"Weight_{s_f}"]
+                                    })
+
+                        if len(indiv_global_data_radar) == 0:
+                            st.info("레이더 차트를 그릴 수 있는 개별 가중치 데이터가 없습니다.")
+                            radar_indiv_df = pd.DataFrame(columns=["Type","Factor","Global_Weight"])
+                        else:
+                            radar_indiv_df = pd.DataFrame(indiv_global_data_radar)
+                            radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'])['Global_Weight'].mean().reset_index()
+
+                            fig_radar = go.Figure()
+                            for t in radar_plot_df['Type'].unique():
+                                t_data = radar_plot_df[radar_plot_df['Type'] == t]
+                                fig_radar.add_trace(
+                                    go.Scatterpolar(
+                                        r=t_data['Global_Weight'],
+                                        theta=t_data['Factor'],
+                                        fill='toself',
+                                        name=t
+                                    )
+                                )
+                            st.plotly_chart(fig_radar, use_container_width=True)
 
                     st.markdown("---")
                     st.write("**3. 일관성 비율(CR) 분포도 (Violin/Box Plot)**")
@@ -1272,4 +1298,3 @@ if uploaded_file:
 
 st.markdown("---")
 st.caption("© 2026 AHP Analysis System. All rights reserved.")
-
