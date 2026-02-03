@@ -1223,36 +1223,32 @@ if uploaded_file:
                     with col_chart2:
                         st.write("**그룹별 중요도 패턴 (Radar)**")
 
-                        indiv_global_data_radar = []
-                        all_ids = main_results_df['ID'].unique()
-
+                        # [오류 수정 부분] radar_indiv_df 생성 로직 최적화 및 안정화
+                        radar_indiv_data = []
                         for rid in all_ids:
-                            m_df = main_results_df[main_results_df['ID'] == rid]
-                            if m_df.empty:
-                                continue
-                            m_row = m_df.iloc[0]
-                            rtype = m_row['Type']
-
+                            m_df_row = main_results_df[main_results_df['ID'] == rid]
+                            if m_df_row.empty: continue
+                            m_row = m_df_row.iloc[0]
+                            rtype = str(m_row['Type'])
+                            
                             for m_f in main_factors:
-                                sub_df_full = sub_results_storage[m_f]['df']
-                                u_sub_df = sub_df_full[sub_df_full['ID'] == rid]
-                                if u_sub_df.empty:
-                                    continue
-                                s_row = u_sub_df.iloc[0]
-
+                                if m_f not in sub_results_storage: continue
+                                s_df_full = sub_results_storage[m_f]['df']
+                                u_s_row = s_df_full[s_df_full['ID'] == rid]
+                                if u_s_row.empty: continue
+                                s_row = u_s_row.iloc[0]
+                                
                                 for s_f in sub_results_storage[m_f]['factors']:
-                                    indiv_global_data_radar.append({
-                                        "Type": rtype,
-                                        "Factor": s_f,
-                                        "Global_Weight": m_row[f"Weight_{m_f}"] * s_row[f"Weight_{s_f}"]
-                                    })
+                                    w_val = m_row[f"Weight_{m_f}"] * s_row[f"Weight_{s_f}"]
+                                    radar_indiv_data.append({"Type": rtype, "Factor": s_f, "Global_Weight": w_val})
 
-                        if len(indiv_global_data_radar) == 0:
+                        if not radar_indiv_data:
                             st.info("레이더 차트를 그릴 수 있는 개별 가중치 데이터가 없습니다.")
                             radar_indiv_df = pd.DataFrame(columns=["Type","Factor","Global_Weight"])
                         else:
-                            radar_indiv_df = pd.DataFrame(indiv_global_data_radar)
-                            radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'])['Global_Weight'].mean().reset_index()
+                            radar_indiv_df = pd.DataFrame(radar_indiv_data)
+                            # numeric_only=True를 사용하여 Matrix_Object 등 객체 타입이 연산에 포함되지 않도록 방지
+                            radar_plot_df = radar_indiv_df.groupby(['Type', 'Factor'], as_index=False)['Global_Weight'].mean()
 
                             fig_radar = go.Figure()
                             for t in radar_plot_df['Type'].unique():
@@ -1269,28 +1265,36 @@ if uploaded_file:
 
                     st.markdown("---")
                     st.write("**3. 일관성 비율(CR) 분포도 (Violin/Box Plot)**")
-                    cr_dist_data = main_results_df[['ID', 'Type', 'Final_CR']].copy()
-                    cr_dist_data['Level'] = '대분류'
+                    cr_dist_list = []
+                    # 대분류 CR 데이터 추가
+                    for _, row in main_results_df.iterrows():
+                        cr_dist_list.append({"ID": row['ID'], "Type": row['Type'], "Final_CR": row['Final_CR'], "Level": "대분류"})
+                    # 중분류 CR 데이터 추가
                     for m_f in main_factors:
-                        temp_cr = sub_results_storage[m_f]['df'][['ID', 'Type', 'Final_CR']].copy()
-                        temp_cr['Level'] = f'중분류({m_f})'
-                        cr_dist_data = pd.concat([cr_dist_data, temp_cr])
-                    fig_cr_dist = px.violin(cr_dist_data, y="Final_CR", x="Level", color="Level", box=True, points="all", title="응답자별 일관성 지수 분포")
-                    st.plotly_chart(fig_cr_dist, use_container_width=True)
+                        s_df_cr = sub_results_storage[m_f]['df']
+                        for _, row in s_df_cr.iterrows():
+                            cr_dist_list.append({"ID": row['ID'], "Type": row['Type'], "Final_CR": row['Final_CR'], "Level": f"중분류({m_f})"})
+                    
+                    if cr_dist_list:
+                        cr_dist_data = pd.DataFrame(cr_dist_list)
+                        fig_cr_dist = px.violin(cr_dist_data, y="Final_CR", x="Level", color="Level", box=True, points="all", title="응답자별 일관성 지수 분포")
+                        st.plotly_chart(fig_cr_dist, use_container_width=True)
 
                     st.markdown("---")
                     st.write("**4. 항목별 우선순위 산점도 (중요도 vs. 합의도)**")
-                    scatter_df = radar_indiv_df.groupby('Factor')['Global_Weight'].agg(['mean', 'std']).reset_index()
-                    scatter_df.columns = ['Factor', 'Weight_Mean', 'Weight_SD']
-                    fig_scatter = px.scatter(scatter_df, x="Weight_Mean", y="Weight_SD", text="Factor", size="Weight_Mean", color="Weight_Mean",
-                                            labels={'Weight_Mean': '중요도(평균)', 'Weight_SD': '의견차이(표준편차)'},
-                                            title="중요도-합의도 분석 (우측 하단일수록 중요하고 합의된 항목)")
-                    fig_scatter.update_traces(textposition='top center')
-                    st.plotly_chart(fig_scatter, use_container_width=True)
+                    if not radar_indiv_df.empty:
+                        scatter_df = radar_indiv_df.groupby('Factor')['Global_Weight'].agg(['mean', 'std']).reset_index()
+                        scatter_df.columns = ['Factor', 'Weight_Mean', 'Weight_SD']
+                        fig_scatter = px.scatter(scatter_df, x="Weight_Mean", y="Weight_SD", text="Factor", size="Weight_Mean", color="Weight_Mean",
+                                                labels={'Weight_Mean': '중요도(평균)', 'Weight_SD': '의견차이(표준편차)'},
+                                                title="중요도-합의도 분석 (우측 하단일수록 중요하고 합의된 항목)")
+                        fig_scatter.update_traces(textposition='top center')
+                        st.plotly_chart(fig_scatter, use_container_width=True)
 
                 with tab5:
                     st.download_button("📥 결과 파일 다운로드 (Excel)", data=output.getvalue(), file_name="AHP_Result.xlsx")
-                    st.dataframe(radar_indiv_df, use_container_width=True)
+                    if not radar_indiv_df.empty:
+                        st.dataframe(radar_indiv_df, use_container_width=True)
         else:
             st.warning(message)
     except Exception as e:
