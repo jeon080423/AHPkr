@@ -1398,18 +1398,10 @@ st.markdown("""
     .stDownloadButton > button:hover {
         background-color: #b71c1c;
     }
-    /* 분석 관련 버튼 통합 스타일링 */
-    div.stButton > button {
-        background-color: #f8b740 !important;
-        color: white !important;
+    div.stButton > button:first-child[kind="primary"] {
+        background-color: #90EE90 !important; 
+        color: black !important;
         border: none !important;
-        border-radius: 5px !important;
-        height: 3rem !important;
-        width: 100% !important;
-        font-weight: bold !important;
-    }
-    div.stButton > button:hover {
-        background-color: #e6a635 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1455,7 +1447,7 @@ with st.sidebar:
         
         """)        
     
-    if st.button("🌐 커뮤니티 게시판", use_container_width=True):
+    if st.button("🌐 커뮤니티 게시판", use_container_width=True, type="primary"):
         st.session_state.page = "community"
         st.rerun()
     
@@ -1920,7 +1912,7 @@ else:
     uploaded_file = st.file_uploader("작성된 엑셀 파일 업로드 (.xlsx)", type=['xlsx', 'xls'])
 
     if uploaded_file:
-        if st.button("분석 시작"):
+        if st.button("분석 시작", type="primary"):
             try:
                 excel_obj = pd.ExcelFile(uploaded_file)
                 sheet_names = excel_obj.sheet_names
@@ -2327,6 +2319,8 @@ else:
                         with tab5:
                             st.download_button("📥 결과 파일 다운로드 (Excel)", data=output.getvalue(), file_name="AHP_Result.xlsx")
                             st.dataframe(radar_indiv_df, use_container_width=True)
+                else:
+                    st.warning(message)
             except Exception as e:
                 st.error(f"오류 발생: {e}")
 
