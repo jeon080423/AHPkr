@@ -1,27 +1,31 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="0;url=https://www.ahpmaster.com/">
-    <script>
-        window.location.href = "https://www.ahpmaster.com/";
-    </script>
-    <title>AHP 마스터 - 홈페이지 이전 안내</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700&display=swap');
-        body { font-family: 'Pretendard', sans-serif; text-align: center; padding: 10vh 20px; background-color: #f8fafc; color: #1e293b; margin: 0; }
-        h1 { color: #4f46e5; font-size: 2rem; margin-bottom: 20px; }
-        p { font-size: 1.1rem; line-height: 1.6; color: #64748b; margin-bottom: 10px; }
-        a { display: inline-block; margin-top: 30px; padding: 14px 28px; background-color: #4f46e5; color: white; text-decoration: none; border-radius: 12px; font-weight: bold; transition: all 0.2s ease-in-out; box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2); }
-        a:hover { background-color: #4338ca; transform: translateY(-2px); box-shadow: 0 6px 12px rgba(79, 70, 229, 0.3); }
-    </style>
+  <meta charset="utf-8">
+  <meta name="naver-site-verification" content="9a238d4eb7b2f9a0ac63b4fe805376fbe4e7ab01" />
+  <title>AHP Master</title>
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+    iframe { border: none; width: 100%; height: 100%; }
+  </style>
+  <script>
+    if (window.location.hostname === 'jeon080423.github.io') {
+      window.location.href = "https://www.ahpmaster.com/";
+    }
+  </script>
 </head>
 <body>
-    <h1>AHP 마스터 서비스 이전 안내 🚀</h1>
-    <p>더 빠르고 강력해진 <strong>새로운 AHP 마스터 포털</strong>로 사이트가 통합 이전되었습니다.<br>
-    3초 뒤에 새로운 홈페이지(www.ahpmaster.com)로 자동 이동합니다.</p>
-    <p>만약 자동으로 이동하지 않는다면 아래 버튼을 클릭해 주세요.</p>
-    <a href="https://www.ahpmaster.com/">새로운 AHP 마스터 접속하기</a>
+  <iframe id="streamlit-app" src=""></iframe>
+  <script>
+    // Forward query parameters to the iframe src dynamically
+    const queryParams = window.location.search;
+    const baseSrc = "https://ahpkrj.streamlit.app/?embed=true";
+    if (queryParams) {
+      // Append query parameters with '&' since '?embed=true' already has '?'
+      document.getElementById('streamlit-app').src = baseSrc + "&" + queryParams.substring(1);
+    } else {
+      document.getElementById('streamlit-app').src = baseSrc;
+    }
+  </script>
 </body>
 </html>
